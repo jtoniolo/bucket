@@ -1,0 +1,9 @@
+# OMC session/runtime state
+.omc
+
+# Local Claude Code settings
+.claude/settings.local.json
+
+# Vendored third-party skills (reproducible from skills-lock.json)
+.claude/skills/
+.agents/
