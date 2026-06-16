@@ -9,7 +9,7 @@
 
 export { branchFor, type TaskRef } from "./branch.js";
 export { fillCommand, type CommandVars } from "./command.js";
-export { parseTasks, selectHighestPriority, type Task } from "./task.js";
+export { parseTasks, selectHighestPriority, selectTasks, type Task } from "./task.js";
 export {
   resolveConfig,
   ENGINE_DEFAULTS,

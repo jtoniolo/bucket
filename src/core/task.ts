@@ -59,3 +59,39 @@ export function selectHighestPriority(tasks: Task[]): Task | null {
   if (tasks.length === 0) return null;
   return tasks.reduce((best, t) => (t.id < best.id ? t : best));
 }
+
+/**
+ * Assign a numeric rank for the ordering policy: bug → tracer → polish → refactor → other.
+ * Lower rank = higher priority.
+ */
+function taskPriority(task: Task): number {
+  for (const label of task.labels) {
+    const l = label.toLowerCase();
+    if (l === "bug" || l.startsWith("bug") || l.endsWith("bug") || l.includes("bug")) return 0;
+    if (l.includes("tracer")) return 1;
+    if (l.includes("polish")) return 2;
+    if (l.includes("refactor")) return 3;
+  }
+  return 4;
+}
+
+/**
+ * Select up to `cap` Tasks for a single Pass, ordered by the policy:
+ *   bug fixes (0) → tracer bullets (1) → polish (2) → refactors (3) → other (4)
+ *
+ * Within the same priority tier, Tasks are ordered by id ascending (oldest first)
+ * to keep selection deterministic across runs.
+ *
+ * Slice 2: replaces the single-Task `selectHighestPriority` with multi-Task
+ * parallel selection bounded by the Parallelism Cap.
+ */
+export function selectTasks(tasks: Task[], cap: number): Task[] {
+  if (tasks.length === 0) return [];
+  const sorted = [...tasks].sort((a, b) => {
+    const pa = taskPriority(a);
+    const pb = taskPriority(b);
+    if (pa !== pb) return pa - pb;
+    return a.id - b.id; // stable tie-break: lowest id first
+  });
+  return sorted.slice(0, cap);
+}
