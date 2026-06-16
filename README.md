@@ -4,7 +4,7 @@ A native [Claude Code](https://claude.com/claude-code) plugin that runs an auton
 
 Bucket reproduces the overall process of [Sandcastle](https://github.com/mattpocock/sandcastle) using Claude Code's own primitives instead of an external orchestrator and Docker sandboxes. The name is a nod to Sandcastle — you build a sandcastle with a bucket — and to how it works: it scoops from a bucket of ready tasks.
 
-> **Status: early design.** The product is documented (see [`CONTEXT.md`](./CONTEXT.md) and [`docs/adr/`](./docs/adr/)); the plugin is not yet implemented. This README describes what Bucket is being built to do.
+> **Status: walking skeleton.** The product is documented (see [`CONTEXT.md`](./CONTEXT.md) and [`docs/adr/`](./docs/adr/)). The first end-to-end slice is implemented: the `/bucket` Launcher resolves config and runs a Workflow that implements a single ready Task in an isolated worktree and merges it. The Plan dependency graph, Review, parallelism, and the outer Loop are not built yet.
 
 ## What it does
 
@@ -71,6 +71,23 @@ In both cases, give the environment only the credentials and network access the 
 ## Configuration (planned)
 
 A single `bucket.config.json` at the repo root holds the engine settings and names the active preset — base branch, the three work-source commands, parallelism cap, branch-name format, test/lint commands, per-phase models, and the commit-message prefix (default `RALPH:`, which the prompts grep to surface recent autonomous commits). The exact schema is not yet finalized.
+
+## Development
+
+The deterministic decision logic (config resolution, branch naming, the merge gate, Task selection) lives in a plain, tested core under `src/core/`. The Workflow sandbox can't read files or import at runtime, so a build step inlines that core into a single self-contained Workflow script ([ADR-0005](./docs/adr/0005-testable-core-bundled-into-workflow.md)).
+
+```sh
+npm install
+npm test          # vitest: unit tests + a temp-git-repo integration test
+npm run typecheck # tsc --noEmit
+npm run build     # bundle dist/bucket.workflow.js + dist/resolve-config.mjs
+```
+
+- `src/core/` — pure, tested seams (`resolveConfig`, `branchFor`, `parseTasks`, work-source commands) plus the impure, integration-tested git wrapper.
+- `src/workflow/bucket.workflow.js` — the thin orchestration shell (bundle source).
+- `src/cli/resolve-config.ts` — the Launcher's config resolver/validator.
+- `commands/bucket.md` + `.claude-plugin/plugin.json` — the `/bucket` slash command and plugin manifest.
+- `bucket.config.json` — the single declarative config the Launcher reads.
 
 ## Documentation
 

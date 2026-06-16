@@ -1,0 +1,9 @@
+{
+  "name": "bucket",
+  "version": "0.1.0",
+  "description": "Autonomous plan/execute/review/merge loop over a backlog of Tasks, using Claude Code's native primitives (Workflow script, sub-agents, git worktrees).",
+  "author": { "name": "Jeffrey Toniolo" },
+  "homepage": "https://github.com/jtoniolo/bucket",
+  "license": "MIT",
+  "commands": ["./commands/bucket.md"]
+}
