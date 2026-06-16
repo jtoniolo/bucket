@@ -1,6 +1,14 @@
 {
   "name": "bucket",
+  "owner": {
+    "name": "Jeffrey Toniolo",
+    "url": "https://github.com/jtoniolo"
+  },
   "plugins": [
-    { "name": "bucket", "source": "./" }
+    {
+      "name": "bucket",
+      "source": "./",
+      "description": "Autonomous plan/execute/review/merge loop over a backlog of Tasks, using Claude Code's native primitives."
+    }
   ]
 }
