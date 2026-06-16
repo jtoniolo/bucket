@@ -2,7 +2,7 @@
 
 ### Issue tracker
 
-Issues live as markdown files under `.scratch/<feature>/` in this repo (local markdown, no remote). See `docs/agents/issue-tracker.md`.
+Issues and PRDs live as GitHub issues on `jtoniolo/bucket` (via the `gh` CLI). See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
