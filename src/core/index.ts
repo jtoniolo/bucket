@@ -19,3 +19,9 @@ export {
   type RawConfig,
 } from "./config.js";
 export { GITHUB_WORK_SOURCE, READY_LABEL } from "./worksource/github.js";
+export {
+  selectPlan,
+  type TaskWithBlockers,
+  type GraphEntry,
+  type Plan,
+} from "./plan.js";
