@@ -1,18 +1,16 @@
 /**
- * Bucket Workflow — Slice 2: Parallel Execute with Parallelism Cap.
+ * Bucket Workflow — Slice 4: Review phase (+ crash salvage).
  *
- * Extends the Slice 1 skeleton to work several Tasks per Pass in parallel.
- * The Work Source `list` returns multiple ready Tasks; the top N are selected
- * by the ordering policy (bug → tracer → polish → refactor) and bounded by the
- * Parallelism Cap (default 3). Each Task runs concurrently in its own
- * worktree/branch. Per-Task failure is isolated via Promise.allSettled — one
- * failing implementer does not cancel its siblings. After Execute, all branches
- * with Commits-Ahead-of-Base > 0 are merged sequentially into the Base Branch.
+ * Adds a Review phase between Execute and Merge. After all implementers finish,
+ * every branch with Commits-Ahead-of-Base > 0 receives a reviewer agent that
+ * improves clarity and correctness on the same branch without changing
+ * behaviour. Branches with zero commits are skipped entirely. If an implementer
+ * crashed or timed out but still left commits on its branch, a salvage reviewer
+ * runs so the partial work is cleaned up and mergeable.
  *
- * Still no Plan dependency graph and no Review phase — those arrive in later
- * slices. Deterministic decisions (branch names, merge gate) are computed here
- * in JS from the inlined pure core; all shell/git/gh mutation happens inside
- * spawned agents, because the Workflow sandbox has no shell.
+ * Reviewers run in parallel (Promise.allSettled), matching the Execute phase's
+ * isolation model. The Merge phase re-checks commit counts independently so it
+ * accounts for commits from both the implementer and the reviewer.
  *
  * Authoring note: this file is the bundle SOURCE. `build/bundle.mjs` prepends
  * the pure core as an IIFE assigned to `__bucketCore` and writes the
@@ -24,10 +22,11 @@
 export const meta = {
   name: "bucket",
   description:
-    "Bucket Slice 2: select up to N ready Tasks by priority, implement them in parallel in isolated worktrees, merge all branches with commits into the base branch.",
+    "Bucket Slice 4: Plan → Execute (parallel) → Review (parallel, with crash salvage) → Merge.",
   phases: [
     { title: "Plan", detail: "list ready Tasks and select top N by ordering policy, bounded by Parallelism Cap" },
     { title: "Execute", detail: "implement each Task concurrently on its deterministic branch in its own worktree" },
+    { title: "Review", detail: "for each branch with commits, run a reviewer agent that improves clarity/correctness; salvage partial work from crashed implementers" },
     { title: "Merge", detail: "gate each branch on commits-ahead-of-base, then merge and close each Task" },
   ],
 };
@@ -65,6 +64,16 @@ const COUNT_SCHEMA = {
   required: ["count"],
   properties: {
     count: { type: "integer", description: "Integer stdout of the git rev-list command." },
+  },
+};
+
+const REVIEW_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["refined"],
+  properties: {
+    refined: { type: "boolean", description: "Whether any refinements were committed on the branch." },
+    summary: { type: "string", description: "One-line summary of improvements made, or 'no changes needed'." },
   },
 };
 
@@ -167,11 +176,110 @@ for (let i = 0; i < taskBranches.length; i++) {
   }
 }
 
+// ── Review ────────────────────────────────────────────────────────────────────
+// For every Task branch that produced commits (Commits-Ahead-of-Base > 0), a
+// reviewer agent runs on the same branch to improve clarity and correctness
+// without changing behaviour. Branches with zero commits are skipped.
+//
+// Crash salvage: if an implementer failed (Promise.allSettled "rejected") but
+// still left commits on its branch, a salvage reviewer runs so the partial work
+// is cleaned up and becomes mergeable. The Merge phase re-checks commit counts
+// independently, so commits from both implementer and reviewer are accounted for.
+phase("Review");
+const testStepReview = cfg.test ? `Run the project's tests (\`${cfg.test}\`) to verify nothing broke. ` : "";
+const lintStepReview = cfg.lint ? `Run the linter (\`${cfg.lint}\`). ` : "";
+
+// Gate every task branch in parallel — fulfilled and failed implementers alike.
+const reviewGateResults = await Promise.allSettled(
+  taskBranches.map(({ task, branch }) => {
+    const gitCountCmd = `git ${commitsAheadOfBaseArgs(branch, cfg.baseBranch).join(" ")}`;
+    return agent(
+      `Run exactly this command from the repository root and return its integer stdout:\n\n    ${gitCountCmd}\n`,
+      {
+        label: `gate:review:issue-${task.id}`,
+        phase: "Review",
+        model: cfg.phases.review.model,
+        schema: COUNT_SCHEMA,
+      },
+    );
+  }),
+);
+
+// Build the list of branches eligible for review (commits > 0).
+const branchesForReview = [];
+for (let i = 0; i < taskBranches.length; i++) {
+  const { task, branch, worktreePath } = taskBranches[i];
+  const gateResult = reviewGateResults[i];
+  const implementerFailed = executeResults[i].status === "rejected";
+  if (gateResult.status === "fulfilled" && gateResult.value.count > 0) {
+    branchesForReview.push({ task, branch, worktreePath, implementerFailed });
+  } else {
+    log(`Review: branch ${branch} has 0 commits ahead of ${cfg.baseBranch} — skipping reviewer.`);
+  }
+}
+
+// Run all reviewer agents in parallel (Promise.allSettled — one failure doesn't
+// block others). Salvage reviewers get an explicit note in their prompt.
+const reviewResults = await Promise.allSettled(
+  branchesForReview.map(({ task, branch, worktreePath, implementerFailed }) => {
+    const role = implementerFailed ? "salvage reviewer" : "reviewer";
+    const salvageNote = implementerFailed
+      ? `\nNote: the implementer crashed or timed out. Your job is to clean up whatever partial work was left so the branch is mergeable.\n`
+      : "";
+    return agent(
+      [
+        `You are Bucket's ${role} for Task #${task.id}.`,
+        ``,
+        `The implementer has already committed work on branch \`${branch}\` (worktree: ${worktreePath}).`,
+        `Your job is to improve clarity and correctness on that same branch WITHOUT changing behaviour.`,
+        salvageNote,
+        `1. Review all commits on \`${branch}\` not yet in \`${cfg.baseBranch}\`:`,
+        `   \`git log ${cfg.baseBranch}..${branch} --oneline\` (run from ${worktreePath}).`,
+        `2. Make improvements: rename unclear identifiers, improve comments, fix typos, add/tighten`,
+        `   tests, remove dead code. Do NOT change observable behaviour, public APIs, or architectural`,
+        `   decisions.`,
+        `3. ${testStepReview}${lintStepReview}`,
+        `4. If you made any changes, commit them with a message beginning with "${cfg.commitPrefix}" followed by a space.`,
+        `   If no refinements are needed, do NOT create an empty commit.`,
+        ``,
+        `Hard constraints (never violate): do NOT run \`git push\`, \`gh pr create\`, \`--no-verify\`,`,
+        `force-push, or any history rewrite. Stay on branch \`${branch}\` only.`,
+      ]
+        .filter((line) => line !== undefined)
+        .join("\n"),
+      {
+        label: `review:issue-${task.id}`,
+        phase: "Review",
+        model: cfg.phases.review.model,
+        effort: cfg.phases.review.effort,
+        schema: REVIEW_SCHEMA,
+      },
+    );
+  }),
+);
+
+// Log reviewer outcomes and fold salvage branches into candidatesForMerge.
+for (let i = 0; i < branchesForReview.length; i++) {
+  const { task, branch, worktreePath, implementerFailed } = branchesForReview[i];
+  const result = reviewResults[i];
+  const tag = implementerFailed ? " (salvage)" : "";
+  if (result.status === "fulfilled") {
+    const rev = result.value;
+    log(`Review: Task #${task.id}${tag} refined=${rev.refined}` + (rev.summary ? ` — ${rev.summary}` : ""));
+  } else {
+    log(`Review: Task #${task.id}${tag} reviewer FAILED — ${result.reason} — proceeding to Merge with implementer commits only.`);
+  }
+  // Salvage branches were not added to candidatesForMerge by the Execute phase
+  // (their implementer was rejected). Add them now so the Merge phase sees them.
+  if (implementerFailed && !candidatesForMerge.some((c) => c.task.id === task.id)) {
+    candidatesForMerge.push({ task, branch, worktreePath });
+  }
+}
+
 // ── Merge ─────────────────────────────────────────────────────────────────────
-// For every branch that came from a successful implementer, gate on
+// For every candidate branch (fulfilled implementers + salvage branches), gate on
 // Commits-Ahead-of-Base, then merge and close. Processed sequentially to avoid
-// concurrent git checkout conflicts. Failed implementers are skipped entirely —
-// their branches remain open for Resumption on the next Pass.
+// concurrent git checkout conflicts.
 phase("Merge");
 const mergeOutcomes = [];
 
