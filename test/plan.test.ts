@@ -5,8 +5,8 @@ import { selectPlan, type TaskWithBlockers, type Plan } from "../src/core/plan.j
 // Helpers
 // ---------------------------------------------------------------------------
 
-function t(id: number, labels: string[] = [], blockedBy: number[] = []): TaskWithBlockers {
-  return { id, title: `Task ${id}`, labels, blockedBy };
+function t(id: number, labels: string[] = [], blockedBy: number[] = [], commitsAheadOfBase?: number): TaskWithBlockers {
+  return { id, title: `Task ${id}`, labels, blockedBy, ...(commitsAheadOfBase !== undefined ? { commitsAheadOfBase } : {}) };
 }
 
 const EMPTY = new Set<number>();
@@ -187,5 +187,80 @@ describe("selectPlan — Return shape", () => {
     const plan = selectPlan([t(1, ["bug"])], EMPTY, 3);
     const task = plan.unblockedSet[0];
     expect(task).toMatchObject({ id: 1, title: "Task 1", labels: ["bug"] });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// selectPlan — Resumption prioritization
+// ---------------------------------------------------------------------------
+
+describe("selectPlan — Resumption prioritization", () => {
+  it("flags a task with commitsAheadOfBase > 0 as resuming in unblockedSet", () => {
+    const plan = selectPlan([t(1, [], [], 3)], EMPTY, 5);
+    expect(plan.unblockedSet[0]?.resuming).toBe(true);
+  });
+
+  it("does not flag a fresh task (commitsAheadOfBase = 0) as resuming", () => {
+    const plan = selectPlan([t(1, [], [], 0)], EMPTY, 5);
+    expect(plan.unblockedSet[0]?.resuming).toBeUndefined();
+  });
+
+  it("does not flag a task with no commitsAheadOfBase field as resuming", () => {
+    const plan = selectPlan([t(1)], EMPTY, 5);
+    expect(plan.unblockedSet[0]?.resuming).toBeUndefined();
+  });
+
+  it("orders resumption tasks before fresh tasks regardless of label priority", () => {
+    // task 1 is fresh with bug label (highest priority), task 2 is resuming with no label
+    const tasks = [t(1, ["bug"], [], 0), t(2, [], [], 5)];
+    const plan = selectPlan(tasks, EMPTY, 5);
+    expect(plan.unblockedSet.map((x) => x.id)).toEqual([2, 1]);
+  });
+
+  it("orders resumption tasks before fresh tasks when both have same label priority", () => {
+    const tasks = [t(1, ["bug"], [], 0), t(2, ["bug"], [], 2)];
+    const plan = selectPlan(tasks, EMPTY, 5);
+    expect(plan.unblockedSet.map((x) => x.id)).toEqual([2, 1]);
+  });
+
+  it("orders multiple resumption tasks among themselves by priority then id", () => {
+    // tasks 3 and 1 are resuming; task 3 has bug label so higher priority
+    const tasks = [t(1, [], [], 1), t(3, ["bug"], [], 2), t(2, [], [], 0)];
+    const plan = selectPlan(tasks, EMPTY, 5);
+    // resuming: [3 (bug), 1 (other)] then fresh: [2 (other)]
+    expect(plan.unblockedSet.map((x) => x.id)).toEqual([3, 1, 2]);
+  });
+
+  it("populates resumingIds with the IDs of resuming tasks in the unblockedSet", () => {
+    const tasks = [t(1, [], [], 3), t(2, [], [], 0), t(3, [], [], 1)];
+    const plan = selectPlan(tasks, EMPTY, 5);
+    expect(plan.resumingIds.sort()).toEqual([1, 3]);
+  });
+
+  it("resumingIds is empty when no tasks are resuming", () => {
+    const plan = selectPlan([t(1), t(2)], EMPTY, 5);
+    expect(plan.resumingIds).toEqual([]);
+  });
+
+  it("resumingIds only includes tasks that made it into the capped unblockedSet", () => {
+    // cap of 1: only the single highest-priority slot; resuming task 2 beats fresh task 1
+    const tasks = [t(1, ["bug"], [], 0), t(2, [], [], 4)];
+    const plan = selectPlan(tasks, EMPTY, 1);
+    expect(plan.unblockedSet.map((x) => x.id)).toEqual([2]);
+    expect(plan.resumingIds).toEqual([2]);
+  });
+
+  it("resuming task that is still blocked is excluded from unblockedSet", () => {
+    // task 2 has commits but is blocked by task 1 which is unresolved
+    const tasks = [t(1, [], []), t(2, [], [1], 5)];
+    const plan = selectPlan(tasks, EMPTY, 5);
+    expect(plan.unblockedSet.map((x) => x.id)).toEqual([1]);
+    expect(plan.resumingIds).toEqual([]);
+  });
+
+  it("plan includes resumingIds field in all cases", () => {
+    const plan: Plan = selectPlan([t(1)], EMPTY, 3);
+    expect(plan).toHaveProperty("resumingIds");
+    expect(Array.isArray(plan.resumingIds)).toBe(true);
   });
 });

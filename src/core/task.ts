@@ -12,6 +12,12 @@ export interface Task {
   id: number;
   title: string;
   labels: string[];
+  /**
+   * True when the Task's branch already has unmerged commits (Commits-Ahead-of-Base > 0)
+   * from a previous Pass. The Execute phase reads this to continue from existing
+   * work rather than starting fresh.
+   */
+  resuming?: boolean;
 }
 
 /**

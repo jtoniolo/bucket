@@ -28,6 +28,13 @@ export interface TaskWithBlockers extends Task {
    * before this Task can safely start.
    */
   blockedBy: number[];
+  /**
+   * Number of commits on this Task's branch that are ahead of the Base Branch.
+   * A value > 0 means the Task's implementer left unmerged work from a previous
+   * Pass (timed out, budget exhausted, etc.) and should be resumed rather than
+   * started fresh. 0 or undefined means this is a fresh Task.
+   */
+  commitsAheadOfBase?: number;
 }
 
 /**
@@ -60,6 +67,12 @@ export interface Plan {
   totalReady: number;
   /** Parallelism Cap applied to produce the Unblocked Set. */
   cap: number;
+  /**
+   * IDs of Tasks in the Unblocked Set that are being Resumed (their branch
+   * already has commits ahead of the Base Branch). These come first in
+   * `unblockedSet` regardless of label priority.
+   */
+  resumingIds: number[];
 }
 
 // ---------------------------------------------------------------------------
@@ -114,18 +127,34 @@ export function selectPlan(
     t.blockedBy.every((bid) => resolvedIds.has(bid)),
   );
 
-  // Apply ordering policy: priority tier first, then lowest id (oldest) first.
-  const sorted = [...unblocked].sort((a, b) => {
+  // Partition into Resumption tasks (branch has commits > 0) and fresh tasks.
+  const resumingUnblocked = unblocked.filter((t) => (t.commitsAheadOfBase ?? 0) > 0);
+  const freshUnblocked = unblocked.filter((t) => (t.commitsAheadOfBase ?? 0) === 0);
+
+  // Within each partition, apply ordering policy: priority tier first, then lowest id first.
+  const prioritySort = (a: TaskWithBlockers, b: TaskWithBlockers): number => {
     const pa = taskPriority(a);
     const pb = taskPriority(b);
     if (pa !== pb) return pa - pb;
     return a.id - b.id;
-  });
+  };
 
-  const unblockedSet: Task[] = sorted.slice(0, cap).map(({ id, title, labels }) => ({
+  const sortedResuming = [...resumingUnblocked].sort(prioritySort);
+  const sortedFresh = [...freshUnblocked].sort(prioritySort);
+
+  // Resumption tasks lead; fresh tasks follow. Truncate to cap.
+  const combined = [...sortedResuming, ...sortedFresh];
+  const capped = combined.slice(0, cap);
+
+  const resumingIds = capped
+    .filter((t) => (t.commitsAheadOfBase ?? 0) > 0)
+    .map((t) => t.id);
+
+  const unblockedSet: Task[] = capped.map(({ id, title, labels, commitsAheadOfBase }) => ({
     id,
     title,
     labels,
+    ...(( commitsAheadOfBase ?? 0) > 0 ? { resuming: true } : {}),
   }));
 
   return {
@@ -133,5 +162,6 @@ export function selectPlan(
     graph,
     totalReady: tasks.length,
     cap,
+    resumingIds,
   };
 }
