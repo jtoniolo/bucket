@@ -11,3 +11,4 @@ export { branchFor } from "./branch.js";
 export { fillCommand } from "./command.js";
 export { parseTasks, selectHighestPriority, selectTasks } from "./task.js";
 export { commitsAheadOfBaseArgs } from "./git-commands.js";
+export { shouldContinue } from "./loop.js";

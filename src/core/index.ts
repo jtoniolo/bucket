@@ -25,3 +25,4 @@ export {
   type GraphEntry,
   type Plan,
 } from "./plan.js";
+export { shouldContinue } from "./loop.js";
