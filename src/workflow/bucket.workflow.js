@@ -1,5 +1,5 @@
 /**
- * Bucket Workflow — Slice 5: Outer Loop.
+ * Bucket Workflow — Slice 7: Distribution polish.
  *
  * Wraps Plan → Execute → Review → Merge in a bounded outer Loop that re-plans
  * on each Pass. Tasks unblocked by merges in one Pass become selectable in the
@@ -21,7 +21,7 @@
 export const meta = {
   name: "bucket",
   description:
-    "Bucket Slice 5: outer Loop — Plan → Execute (parallel) → Review (parallel, crash salvage) → Merge, repeated until the Unblocked Set is empty or Max Passes is reached.",
+    "Bucket: autonomous Plan → Execute (parallel) → Review (parallel, crash salvage) → Merge loop, repeated until the Unblocked Set is empty or Max Passes is reached.",
   phases: [
     { title: "Plan", detail: "list ready Tasks and select top N by ordering policy, bounded by Parallelism Cap" },
     { title: "Execute", detail: "implement each Task concurrently on its deterministic branch in its own worktree" },
@@ -99,6 +99,7 @@ let stopReason = "max-passes";
 
 while (true) {
   const passLabel = `Pass ${passesCompleted + 1}/${cfg.maxPasses}`;
+  log(`\n${"─".repeat(60)}\n Bucket ${passLabel} starting\n${"─".repeat(60)}`);
 
   // ── Plan ──────────────────────────────────────────────────────────────────
   // The `list` command is the sole source of truth for ready work. Run it in
@@ -109,7 +110,7 @@ while (true) {
     `Run exactly this shell command and return its stdout verbatim, with no commentary:\n\n` +
       `    ${cfg.workSource.list}\n\n` +
       `Do not modify, reformat, or summarise the output. Return the raw stdout.`,
-    { label: "worksource:list", phase: "Plan", model: cfg.phases.plan.model, schema: TASK_LIST_SCHEMA },
+    { label: "worksource:list", phase: "Plan", model: cfg.phases.plan.model, effort: cfg.phases.plan.effort, schema: TASK_LIST_SCHEMA },
   );
 
   const allTasks = parseTasks(listResult.stdout);
@@ -308,6 +309,7 @@ while (true) {
         label: `gate:commits-ahead:issue-${task.id}`,
         phase: "Merge",
         model: cfg.phases.merge.model,
+        effort: cfg.phases.merge.effort,
         schema: COUNT_SCHEMA,
       },
     );
@@ -348,11 +350,24 @@ while (true) {
   allMergeOutcomes.push(...passOutcomes);
   passesCompleted++;
 
+  const mergedCount = passOutcomes.filter((o) => o.status === "merged").length;
+  const skippedCount = passOutcomes.filter((o) => o.status === "skipped").length;
+  log(
+    `\n${passLabel} complete — merged: ${mergedCount}, skipped: ${skippedCount}` +
+      (mergedCount === 0 ? " (no merges this pass; Loop continues per ADR-0004)" : ""),
+  );
+
   // ADR-0004: do NOT check merge count here. A zero-merge Pass is not a stop
   // signal; the next Pass's shouldContinue check (at the top of the loop) is
   // the only progress gate. If the Unblocked Set is still non-empty and passes
   // remain, the Loop continues regardless of how many merges just happened.
 }
+
+const totalMerged = allMergeOutcomes.filter((o) => o.status === "merged").length;
+log(
+  `\n${"═".repeat(60)}\n Bucket done — ${passesCompleted} pass(es), ${totalMerged} task(s) merged` +
+    ` (stop reason: ${stopReason})\n${"═".repeat(60)}`,
+);
 
 return {
   status: "done",

@@ -8,7 +8,9 @@
     {
       "name": "bucket",
       "source": "./",
-      "description": "Autonomous plan/execute/review/merge loop over a backlog of Tasks, using Claude Code's native primitives."
+      "description": "Autonomous plan/execute/review/merge loop over a backlog of Tasks. Uses Claude Code's native Workflow primitives — runs on your subscription, never pushes to remotes, and works in isolated git worktrees.",
+      "keywords": ["autonomous", "agents", "workflow", "github-issues", "worktrees"],
+      "homepage": "https://github.com/jtoniolo/bucket"
     }
   ]
 }

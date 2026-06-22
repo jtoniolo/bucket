@@ -4,8 +4,6 @@ A native [Claude Code](https://claude.com/claude-code) plugin that runs an auton
 
 Bucket reproduces the overall process of [Sandcastle](https://github.com/mattpocock/sandcastle) using Claude Code's own primitives instead of an external orchestrator and Docker sandboxes. The name is a nod to Sandcastle — you build a sandcastle with a bucket — and to how it works: it scoops from a bucket of ready tasks.
 
-> **Status: walking skeleton.** The product is documented (see [`CONTEXT.md`](./CONTEXT.md) and [`docs/adr/`](./docs/adr/)). The first end-to-end slice is implemented: the `/bucket` Launcher resolves config and runs a Workflow that implements a single ready Task in an isolated worktree and merges it. The Plan dependency graph, Review, parallelism, and the outer Loop are not built yet.
-
 ## What it does
 
 Bucket runs a four-phase loop and repeats it until the backlog is exhausted or a pass budget is reached:
@@ -22,6 +20,59 @@ Each new pass re-plans, so tasks unblocked by the previous round's merges get pi
 Sandcastle drives its loop with an external TypeScript program that runs agents headlessly via `claude -p`. Bucket instead runs as a Claude Code **Workflow** launched from inside an interactive session, so it executes against your Claude Code subscription rather than billing API credits. You also get deterministic control flow (phase sequencing, the unblocked-set cap, the outer loop, and merge-gating are real code, not model judgment) and per-task git-worktree isolation for free.
 
 See [ADR-0001](./docs/adr/0001-workflow-script-orchestration.md) for the full rationale.
+
+## Installation
+
+**Prerequisites:** Claude Code, Node.js 18+, `git`, and `gh` (GitHub CLI, authenticated).
+
+### 1. Install the plugin
+
+From the directory where Claude Code is running:
+
+```sh
+claude plugin install https://github.com/jtoniolo/bucket
+```
+
+Or, to install from a local clone:
+
+```sh
+git clone https://github.com/jtoniolo/bucket
+claude plugin install ./bucket
+```
+
+### 2. Build the plugin (first use or after updates)
+
+```sh
+cd bucket        # or wherever the plugin is installed
+npm install
+npm run build
+```
+
+This produces `dist/bucket.workflow.js` (the Workflow the Launcher invokes) and `dist/resolve-config.mjs` (the config resolver the Launcher runs before starting).
+
+### 3. Add a config to your repo
+
+Create `bucket.config.json` at the root of the repo you want Bucket to work on. Minimal config for a GitHub Issues work source:
+
+```json
+{
+  "baseBranch": "main",
+  "test": "npm test",
+  "lint": "npm run typecheck"
+}
+```
+
+See [Configuration](#configuration) below for all options.
+
+### 4. Run Bucket
+
+Open Claude Code in your repo, then invoke the slash command:
+
+```
+/bucket
+```
+
+That's the explicit opt-in. Bucket reads and validates your config, then starts the autonomous loop.
 
 ## Architecture
 
@@ -68,9 +119,75 @@ docker run -it --rm \
 
 In both cases, give the environment only the credentials and network access the run genuinely needs. See [ADR-0002](./docs/adr/0002-worktree-isolation-not-a-security-sandbox.md) for the full safety model.
 
-## Configuration (planned)
+## Configuration
 
-A single `bucket.config.json` at the repo root holds the engine settings and names the active preset — base branch, the three work-source commands, parallelism cap, branch-name format, test/lint commands, per-phase models, and the commit-message prefix (default `RALPH:`, which the prompts grep to surface recent autonomous commits). The exact schema is not yet finalized.
+All settings live in `bucket.config.json` at your repo root. Every field is optional — Bucket's engine defaults are sane for a standard GitHub Issues + `main` branch setup.
+
+```json
+{
+  "preset": null,
+  "baseBranch": "main",
+  "branchPrefix": "ralph",
+  "branchFormat": "{prefix}/issue-{id}",
+  "commitPrefix": "RALPH:",
+  "maxPasses": 10,
+  "parallelismCap": 3,
+  "test": "npm test",
+  "lint": "npm run typecheck",
+  "workSource": {
+    "list": "gh issue list --label ready-for-agent --json number,title,body,labels --jq '[.[] | {id: .number, title: .title, body: .body, labels: [.labels[].name]}]'",
+    "view": "gh issue view {id} --json number,title,body --jq '{id: .number, title: .title, body: .body}'",
+    "close": "gh issue close {id} --comment 'Closed by Bucket.'"
+  },
+  "phases": {
+    "plan":    { "model": "opus",   "effort": "high"   },
+    "execute": { "model": "sonnet", "effort": "medium" },
+    "review":  { "model": "sonnet", "effort": "medium" },
+    "merge":   { "model": "sonnet", "effort": "medium" }
+  }
+}
+```
+
+### Field reference
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `preset` | `null` | Name of an active Preset directory under `presets/`. `null` means no preset. |
+| `baseBranch` | `"main"` | The branch Bucket merges completed work into. |
+| `branchPrefix` | `"ralph"` | Prefix segment of the per-task branch name (the `{prefix}` token in `branchFormat`). |
+| `branchFormat` | `"{prefix}/issue-{id}"` | Branch name template. Must contain `{id}`. `{prefix}` is expanded from `branchPrefix`. |
+| `commitPrefix` | `"RALPH:"` | Every autonomous commit starts with this string. The prompts also grep it to surface recent agent commits. |
+| `maxPasses` | `10` | Maximum number of Plan→Execute→Review→Merge passes before the loop stops. |
+| `parallelismCap` | `3` | Maximum number of tasks worked in parallel each pass. |
+| `test` | `""` | Shell command that runs tests. Run by implementer agents after each change. Empty string skips. |
+| `lint` | `""` | Shell command that runs linters/type-checkers. Run alongside tests. Empty string skips. |
+| `workSource.list` | *(GitHub Issues)* | Shell command that emits ready Tasks as a JSON array `[{id, title, body, labels}]`. This is the **sole source of truth** for what work is ready. |
+| `workSource.view` | *(GitHub Issues)* | Shell command that emits one Task's full body. Must contain `{id}`. |
+| `workSource.close` | *(GitHub Issues)* | Shell command that marks one Task done. Must contain `{id}`. |
+| `phases.plan.model` | `"opus"` | Claude model for the Plan phase. `"opus"` recommended (deeper reasoning for dependency graphs). |
+| `phases.plan.effort` | `"high"` | Effort level for the Plan phase agent. |
+| `phases.execute.model` | `"sonnet"` | Claude model for implementer agents in the Execute phase. |
+| `phases.execute.effort` | `"medium"` | Effort level for implementer agents. |
+| `phases.review.model` | `"sonnet"` | Claude model for reviewer agents in the Review phase. |
+| `phases.review.effort` | `"medium"` | Effort level for reviewer agents. |
+| `phases.merge.model` | `"sonnet"` | Claude model for the merge agent. |
+| `phases.merge.effort` | `"medium"` | Effort level for the merge agent. |
+
+### Presets
+
+A Preset is a self-contained directory that overrides Engine defaults for one repo. Create `presets/<name>/preset.config.json` and set `"preset": "<name>"` in `bucket.config.json`. Any field in `preset.config.json` wins over the engine default but loses to `bucket.config.json`.
+
+Presets keep repo-specific values (custom work-source commands, project-specific branch conventions, adjusted phase models) out of the shared Engine. Stripping a private preset before publishing is a matter of deleting its directory.
+
+## Progress output
+
+Bucket emits structured progress as it runs:
+
+- **Pass banner** — `─── Bucket Pass N/M starting ───` at the start of each pass.
+- **Phase announcements** — `Plan (Pass N/M)`, `Execute (Pass N/M)`, `Review (Pass N/M)`, `Merge (Pass N/M)` as each phase begins.
+- **Per-task logs** — task ID, branch, and outcome for every task in every phase.
+- **Pass summary** — merged and skipped counts after the Merge phase completes.
+- **Final summary** — `═══ Bucket done — N pass(es), N task(s) merged ═══` on exit with the stop reason (`empty-unblocked-set` or `max-passes`).
 
 ## Development
 
