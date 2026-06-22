@@ -2,7 +2,7 @@
  * Config resolution — Engine defaults ⊕ Preset ⊕ user config, then validation.
  *
  * `resolveConfig` is the tested seam from ADR-0005. Per ADR-0003 the Launcher
- * (the `/bucket` command) runs this, NOT the Workflow: the Workflow sandbox has
+ * (the `/bucket:run` command) runs this, NOT the Workflow: the Workflow sandbox has
  * no filesystem access, so the Launcher resolves a single ResolvedConfig and
  * hands it to the Workflow as `args`. Validation fails fast with a clear,
  * actionable message so a typo is caught before any agent is spawned.

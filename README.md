@@ -69,7 +69,7 @@ See [Configuration](#configuration) below for all options.
 Open Claude Code in your repo, then invoke the slash command:
 
 ```
-/bucket
+/bucket:run
 ```
 
 That's the explicit opt-in. Bucket reads and validates your config, then starts the autonomous loop.
@@ -78,7 +78,7 @@ That's the explicit opt-in. Bucket reads and validates your config, then starts 
 
 | Piece | Role |
 | --- | --- |
-| **Launcher** | The `/bucket` slash command. Reads config, resolves the active preset, and starts the workflow. Invoking it is your explicit opt-in to the run. |
+| **Launcher** | The `/bucket:run` slash command. Reads config, resolves the active preset, and starts the workflow. Invoking it is your explicit opt-in to the run. |
 | **Engine** | The repo-agnostic core: the Workflow orchestration script and the four phase prompts. Knows nothing about any specific repo. |
 | **Preset** | A cleanly-detachable bundle that adapts the Engine to one repo — its work-source commands, branch naming, base branch, test/lint commands, and project rules. |
 | **Work Source** | Where tasks come from, abstracted behind three shell commands (*list* / *view* / *close*). The basics target plain GitHub Issues; a preset can override these to drive a GitHub Projects board, Beads, local files, etc. |
@@ -105,7 +105,7 @@ If you need true containment — for example, running Bucket against an untruste
 ```sh
 distrobox create --name bucket-sandbox --image fedora:latest
 distrobox enter bucket-sandbox
-# inside the box: install Claude Code + your toolchain, clone the repo, run /bucket
+# inside the box: install Claude Code + your toolchain, clone the repo, run /bucket:run
 ```
 
 **Docker** (stronger isolation; mount only the repo):
@@ -114,7 +114,7 @@ distrobox enter bucket-sandbox
 docker run -it --rm \
   -v "$PWD":/work -w /work \
   node:22-bookworm bash
-# inside the container: install Claude Code + your toolchain, then run /bucket
+# inside the container: install Claude Code + your toolchain, then run /bucket:run
 ```
 
 In both cases, give the environment only the credentials and network access the run genuinely needs. See [ADR-0002](./docs/adr/0002-worktree-isolation-not-a-security-sandbox.md) for the full safety model.
@@ -203,7 +203,7 @@ npm run build     # bundle dist/bucket.workflow.js + dist/resolve-config.mjs
 - `src/core/` — pure, tested seams (`resolveConfig`, `branchFor`, `parseTasks`, work-source commands) plus the impure, integration-tested git wrapper.
 - `src/workflow/bucket.workflow.js` — the thin orchestration shell (bundle source).
 - `src/cli/resolve-config.ts` — the Launcher's config resolver/validator.
-- `commands/bucket.md` + `.claude-plugin/plugin.json` — the `/bucket` slash command and plugin manifest.
+- `commands/run.md` + `.claude-plugin/plugin.json` — the `/bucket:run` slash command and plugin manifest.
 - `bucket.config.json` — the single declarative config the Launcher reads.
 
 ## Documentation

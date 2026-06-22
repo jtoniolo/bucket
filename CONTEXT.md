@@ -11,7 +11,7 @@ The repo-agnostic core of the plugin — the Workflow orchestration script and p
 _Avoid_: core, framework, runtime
 
 **Launcher**:
-The `/bucket` slash command. It reads the JSON config, resolves the active Preset, and starts the Workflow with the resolved config passed as `args`. It is the single entry point and the user opt-in the Workflow tool requires.
+The `/bucket:run` slash command. It reads the JSON config, resolves the active Preset, and starts the Workflow with the resolved config passed as `args`. It is the single entry point and the user opt-in the Workflow tool requires.
 _Avoid_: entrypoint, trigger, runner
 
 **Preset**:

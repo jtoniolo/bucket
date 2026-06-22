@@ -1,7 +1,7 @@
 /**
  * resolve-config CLI — the deterministic half of the Launcher (ADR-0003).
  *
- * The `/bucket` slash command runs this. It reads `bucket.config.json` from the
+ * The `/bucket:run` slash command runs this. It reads `bucket.config.json` from the
  * current repo, resolves the active Preset (if any), validates the merged
  * config, and prints the single ResolvedConfig as JSON to stdout. On any error
  * it prints a clear message to stderr and exits non-zero, so a bad config fails
