@@ -34,8 +34,12 @@ export const GITHUB_VIEW =
 /** `close {id}`: mark the Task done with a completion comment. No push. */
 export const GITHUB_CLOSE = `gh issue close {id} --comment "Completed by Bucket."`;
 
+/** `start {id}`: mark a Task as in-progress before implementation begins. */
+export const GITHUB_START = `gh issue edit {id} --add-label in-progress`;
+
 export const GITHUB_WORK_SOURCE = {
   list: GITHUB_LIST,
   view: GITHUB_VIEW,
   close: GITHUB_CLOSE,
+  start: GITHUB_START,
 } as const;

@@ -9,7 +9,9 @@
  *      to `__bucketCore`, and injects it into the Workflow source at the
  *      `__BUCKET_CORE_IIFE__` marker — keeping `export const meta` first.
  *   2. Bundles the `resolve-config` CLI (Node) that the Launcher runs to resolve
- *      and validate config before starting the Workflow.
+ *      and validate config before starting the Workflow. Default prompt files
+ *      from `prompts/` are inlined via esbuild's text loader so the CLI can
+ *      seed `.bucket/` on first run.
  *
  * Outputs: dist/bucket.workflow.js (Workflow runtime), dist/resolve-config.mjs (Node).
  */
@@ -69,6 +71,7 @@ async function buildResolveCli() {
     target: "node18",
     banner: { js: "#!/usr/bin/env node" },
     legalComments: "none",
+    loader: { ".md": "text" },
   });
 }
 

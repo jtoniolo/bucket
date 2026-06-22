@@ -52,7 +52,7 @@ This produces `dist/bucket.workflow.js` (the Workflow the Launcher invokes) and 
 
 ### 3. Add a config to your repo
 
-Create `bucket.config.json` at the root of the repo you want Bucket to work on. Minimal config for a GitHub Issues work source:
+Create `.bucket/config.json` in the repo you want Bucket to work on. Minimal config for a GitHub Issues work source:
 
 ```json
 {
@@ -83,7 +83,7 @@ That's the explicit opt-in. Bucket reads and validates your config, then starts 
 | **Preset** | A cleanly-detachable bundle that adapts the Engine to one repo — its work-source commands, branch naming, base branch, test/lint commands, and project rules. |
 | **Work Source** | Where tasks come from, abstracted behind three shell commands (*list* / *view* / *close*). The basics target plain GitHub Issues; a preset can override these to drive a GitHub Projects board, Beads, local files, etc. |
 
-Configuration is a single declarative `bucket.config.json` (read by the Launcher and passed to the workflow as arguments — Workflow scripts can't read the filesystem themselves; see [ADR-0003](./docs/adr/0003-launcher-resolves-config-workflow-reads-args.md)). Presets live in self-contained directories, so adapting Bucket to a new repo — or stripping a private preset before publishing — is a matter of adding or deleting one directory.
+Configuration is a single declarative `.bucket/config.json` (read by the Launcher and passed to the workflow as arguments — Workflow scripts can't read the filesystem themselves; see [ADR-0003](./docs/adr/0003-launcher-resolves-config-workflow-reads-args.md)). Presets live in self-contained directories under `.bucket/presets/`, so adapting Bucket to a new repo — or stripping a private preset before publishing — is a matter of adding or deleting one directory.
 
 ## Safety and isolation
 
@@ -121,7 +121,7 @@ In both cases, give the environment only the credentials and network access the 
 
 ## Configuration
 
-All settings live in `bucket.config.json` at your repo root. Every field is optional — Bucket's engine defaults are sane for a standard GitHub Issues + `main` branch setup.
+All settings live in `.bucket/config.json`. Every field is optional — Bucket's engine defaults are sane for a standard GitHub Issues + `main` branch setup.
 
 ```json
 {
@@ -152,7 +152,7 @@ All settings live in `bucket.config.json` at your repo root. Every field is opti
 
 | Field | Default | Description |
 | --- | --- | --- |
-| `preset` | `null` | Name of an active Preset directory under `presets/`. `null` means no preset. |
+| `preset` | `null` | Name of an active Preset directory under `.bucket/presets/`. `null` means no preset. |
 | `baseBranch` | `"main"` | The branch Bucket merges completed work into. |
 | `branchPrefix` | `"ralph"` | Prefix segment of the per-task branch name (the `{prefix}` token in `branchFormat`). |
 | `branchFormat` | `"{prefix}/issue-{id}"` | Branch name template. Must contain `{id}`. `{prefix}` is expanded from `branchPrefix`. |
@@ -175,7 +175,7 @@ All settings live in `bucket.config.json` at your repo root. Every field is opti
 
 ### Presets
 
-A Preset is a self-contained directory that overrides Engine defaults for one repo. Create `presets/<name>/preset.config.json` and set `"preset": "<name>"` in `bucket.config.json`. Any field in `preset.config.json` wins over the engine default but loses to `bucket.config.json`.
+A Preset is a self-contained directory that overrides Engine defaults for one repo. Create `.bucket/presets/<name>/preset.config.json` and set `"preset": "<name>"` in `.bucket/config.json`. Any field in `preset.config.json` wins over the engine default but loses to `.bucket/config.json`.
 
 Presets keep repo-specific values (custom work-source commands, project-specific branch conventions, adjusted phase models) out of the shared Engine. Stripping a private preset before publishing is a matter of deleting its directory.
 
@@ -204,7 +204,7 @@ npm run build     # bundle dist/bucket.workflow.js + dist/resolve-config.mjs
 - `src/workflow/bucket.workflow.js` — the thin orchestration shell (bundle source).
 - `src/cli/resolve-config.ts` — the Launcher's config resolver/validator.
 - `commands/run.md` + `.claude-plugin/plugin.json` — the `/bucket:run` slash command and plugin manifest.
-- `bucket.config.json` — the single declarative config the Launcher reads.
+- `.bucket/config.json` — the single declarative config the Launcher reads.
 
 ## Documentation
 

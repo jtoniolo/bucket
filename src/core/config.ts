@@ -17,6 +17,8 @@ export interface WorkSourceCommands {
   view: string;
   /** Mark one Task done / transition its status. Carries an `{id}` placeholder. */
   close: string;
+  /** Mark one Task as in-progress before implementation begins. Carries an `{id}` placeholder. */
+  start: string;
 }
 
 export interface PhaseConfig {
@@ -67,7 +69,7 @@ export const ENGINE_DEFAULTS: ResolvedConfig = {
   },
 };
 
-/** Raw config as written in `bucket.config.json` or supplied by a Preset. */
+/** Raw config as written in `.bucket/config.json` or supplied by a Preset. */
 export type RawConfig = Record<string, unknown>;
 
 class ConfigError extends Error {
@@ -94,6 +96,7 @@ function mergeWorkSource(
     list: (override.list as string) ?? base.list,
     view: (override.view as string) ?? base.view,
     close: (override.close as string) ?? base.close,
+    start: (override.start as string) ?? base.start,
   };
 }
 
@@ -174,14 +177,13 @@ function validate(cfg: ResolvedConfig): ResolvedConfig {
     throw new ConfigError(`"branchFormat" must contain the "{id}" placeholder (got "${cfg.branchFormat}")`);
   }
 
-  for (const k of ["list", "view", "close"] as const) {
+  for (const k of ["list", "view", "close", "start"] as const) {
     requireNonEmptyString(cfg.workSource[k], `workSource.${k}`);
   }
-  if (!cfg.workSource.view.includes("{id}")) {
-    throw new ConfigError(`"workSource.view" must contain the "{id}" placeholder so the Engine can target one Task`);
-  }
-  if (!cfg.workSource.close.includes("{id}")) {
-    throw new ConfigError(`"workSource.close" must contain the "{id}" placeholder so the Engine can target one Task`);
+  for (const k of ["view", "close", "start"] as const) {
+    if (!cfg.workSource[k].includes("{id}")) {
+      throw new ConfigError(`"workSource.${k}" must contain the "{id}" placeholder so the Engine can target one Task`);
+    }
   }
 
   for (const name of ["plan", "execute", "review", "merge"] as const) {
@@ -194,7 +196,7 @@ function validate(cfg: ResolvedConfig): ResolvedConfig {
 /**
  * Resolve and validate a Bucket config.
  *
- * Merge order (later wins): Engine defaults → Preset → user `bucket.config.json`.
+ * Merge order (later wins): Engine defaults → Preset → user `.bucket/config.json`.
  * After merging, `{prefix}` in the branch format is baked in from `branchPrefix`,
  * leaving a template that only `branchFor` needs to fill (`{id}`). Throws a
  * `ConfigError` with a clear message on the first invalid field.
@@ -202,7 +204,7 @@ function validate(cfg: ResolvedConfig): ResolvedConfig {
 export function resolveConfig(rawConfig: RawConfig = {}, preset?: RawConfig): ResolvedConfig {
   let cfg = ENGINE_DEFAULTS;
   cfg = mergeLayer(cfg, preset, "preset");
-  cfg = mergeLayer(cfg, rawConfig, "bucket.config.json");
+  cfg = mergeLayer(cfg, rawConfig, ".bucket/config.json");
 
   // Bake the configured prefix into the branch template so the Workflow only
   // has to fill `{id}` at runtime.

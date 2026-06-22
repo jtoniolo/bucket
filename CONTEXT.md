@@ -11,7 +11,7 @@ The repo-agnostic core of the plugin — the Workflow orchestration script and p
 _Avoid_: core, framework, runtime
 
 **Launcher**:
-The `/bucket:run` slash command. It reads the JSON config, resolves the active Preset, and starts the Workflow with the resolved config passed as `args`. It is the single entry point and the user opt-in the Workflow tool requires.
+The `/bucket:run` slash command. It reads `.bucket/config.json`, resolves the active Preset, and starts the Workflow with the resolved config passed as `args`. It is the single entry point and the user opt-in the Workflow tool requires.
 _Avoid_: entrypoint, trigger, runner
 
 **Preset**:
@@ -30,7 +30,7 @@ Where Tasks come from. The Engine never talks to a source directly; it is abstra
 _Avoid_: backend, provider, tracker
 
 **Work Source Commands**:
-The three shell commands that form the contract between the Engine and a Work Source: **list** (emit ready-for-work Tasks as JSON — the sole source of truth for what work exists), **view** (read one Task's full body), and **close** (mark one Task done, or transition its status). Adapted from Sandcastle's `LIST_TASKS_COMMAND` / `VIEW_TASK_COMMAND` / `CLOSE_TASK_COMMAND` placeholders.
+The four shell commands that form the contract between the Engine and a Work Source: **list** (emit ready-for-work Tasks as JSON — the sole source of truth for what work exists), **view** (read one Task's full body), **close** (mark one Task done, or transition its status), and **start** (mark one Task as in-progress before implementation begins). Each command that targets a single Task carries an `{id}` placeholder.
 
 ## The Loop
 

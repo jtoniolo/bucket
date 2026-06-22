@@ -37,6 +37,7 @@ describe("resolveConfig", () => {
     expect(cfg.workSource.list).toBe("custom-list --json");
     expect(cfg.workSource.view).toBe(GITHUB_WORK_SOURCE.view);
     expect(cfg.workSource.close).toBe(GITHUB_WORK_SOURCE.close);
+    expect(cfg.workSource.start).toBe(GITHUB_WORK_SOURCE.start);
   });
 
   it("deep-merges a single phase override without dropping the others", () => {
@@ -71,6 +72,12 @@ describe("resolveConfig", () => {
     it("rejects a view command without an {id} placeholder", () => {
       expect(() => resolveConfig({ workSource: { view: "gh issue view" } })).toThrow(
         /workSource\.view.*\{id\}/,
+      );
+    });
+
+    it("rejects a start command without an {id} placeholder", () => {
+      expect(() => resolveConfig({ workSource: { start: "gh issue edit" } })).toThrow(
+        /workSource\.start.*\{id\}/,
       );
     });
 

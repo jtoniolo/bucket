@@ -16,13 +16,13 @@ Do not implement Tasks yourself; the Workflow and its agents do that.
    node "${CLAUDE_PLUGIN_ROOT}/dist/resolve-config.mjs"
    ```
 
-   This reads `bucket.config.json` from the current repo, resolves the active
+   This reads `.bucket/config.json` from the current repo, resolves the active
    Preset (if any), validates the merged config, and prints the resolved config
    as JSON on stdout.
 
 2. **Fail fast.** If the command exits non-zero, show its stderr message to the
    user verbatim and **stop**. Do not start the Workflow with bad config. If
-   `bucket.config.json` is missing, tell the user to create one (see the example
+   `.bucket/config.json` is missing, tell the user to create one (see the example
    in the repo) and stop.
 
 3. **Start the Workflow.** On success, parse the JSON the command printed and
