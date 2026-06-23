@@ -1,6 +1,6 @@
 {
   "name": "bucket",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A native Claude Code plugin that runs an autonomous plan/execute/review/merge loop over a backlog of Tasks.",
   "type": "module",
   "license": "MIT",
