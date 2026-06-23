@@ -1,0 +1,16 @@
+{
+  "preset": null,
+  "baseBranch": "main",
+  "branchPrefix": "ralph",
+  "commitPrefix": "RALPH:",
+  "maxPasses": 10,
+  "parallelismCap": 3,
+  "test": "npm test",
+  "lint": "npm run typecheck",
+  "phases": {
+    "plan": { "model": "opus", "effort": "high" },
+    "execute": { "model": "sonnet", "effort": "medium" },
+    "review": { "model": "sonnet", "effort": "medium" },
+    "merge": { "model": "sonnet", "effort": "medium" }
+  }
+}

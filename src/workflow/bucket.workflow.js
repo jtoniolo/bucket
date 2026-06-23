@@ -26,6 +26,7 @@ export const meta = {
 };
 
 // __BUCKET_CORE_IIFE__  (build/bundle.mjs replaces this marker with the inlined core)
+// __BUCKET_PROMPTS__    (build/bundle.mjs replaces this marker with the inlined default prompts)
 
 const { branchFor, fillCommand, fillTemplate, commitsAheadOfBaseArgs, shouldContinue } = __bucketCore;
 
@@ -91,7 +92,19 @@ const MERGE_SCHEMA = {
 };
 
 const cfg = args;
-const prompts = cfg.prompts;
+const prompts = cfg.prompts || __bucketPrompts;
+
+const MAX_AGENT_RETRIES = 2;
+async function retryAgent(prompt, opts) {
+  for (let attempt = 0; attempt <= MAX_AGENT_RETRIES; attempt++) {
+    const result = await agent(prompt, opts);
+    if (result !== null) return result;
+    if (attempt < MAX_AGENT_RETRIES) {
+      log(`${opts.label}: transient failure (attempt ${attempt + 1}/${MAX_AGENT_RETRIES + 1}), retrying...`);
+    }
+  }
+  return null;
+}
 
 // ── Outer Loop ──────────────────────────────────────────────────────────────
 let passesCompleted = 0;
@@ -112,13 +125,19 @@ while (true) {
     PARALLELISM_CAP: String(cfg.parallelismCap),
   });
 
-  const planResult = await agent(planPrompt, {
+  const planResult = await retryAgent(planPrompt, {
     label: "plan",
     phase: "Plan",
     model: cfg.phases.plan.model,
     effort: cfg.phases.plan.effort,
     schema: PLAN_SCHEMA,
   });
+
+  if (!planResult) {
+    log(`Plan (${passLabel}): planner agent failed after retries — stopping loop.`);
+    stopReason = "agent-failure";
+    break;
+  }
 
   const selectedTasks = (planResult.tasks || []).slice(0, cfg.parallelismCap);
 
@@ -167,7 +186,7 @@ while (true) {
         LINT_STEP: lintStep,
         COMMIT_PREFIX: cfg.commitPrefix,
       });
-      return agent(prompt, {
+      return retryAgent(prompt, {
         label: `implement:issue-${task.id}`,
         phase: "Execute",
         model: cfg.phases.execute.model,
@@ -182,7 +201,7 @@ while (true) {
   for (let i = 0; i < taskBranches.length; i++) {
     const { task, branch, worktreePath } = taskBranches[i];
     const result = executeResults[i];
-    if (result.status === "fulfilled") {
+    if (result.status === "fulfilled" && result.value) {
       const impl = result.value;
       log(
         `Execute (${passLabel}): Task #${task.id} committed=${impl.committed}` +
@@ -190,7 +209,8 @@ while (true) {
       );
       candidatesForMerge.push({ task, branch, worktreePath });
     } else {
-      log(`Execute (${passLabel}): Task #${task.id} FAILED — ${result.reason} — branch left open for Resumption.`);
+      const reason = result.status === "rejected" ? result.reason : "agent returned null after retries";
+      log(`Execute (${passLabel}): Task #${task.id} FAILED — ${reason} — branch left open for Resumption.`);
     }
   }
 
@@ -200,7 +220,7 @@ while (true) {
   const reviewGateResults = await Promise.allSettled(
     taskBranches.map(({ task, branch }) => {
       const gitCountCmd = `git ${commitsAheadOfBaseArgs(branch, cfg.baseBranch).join(" ")}`;
-      return agent(
+      return retryAgent(
         `Run exactly this command from the repository root and return its integer stdout:\n\n    ${gitCountCmd}\n`,
         {
           label: `gate:review:issue-${task.id}`,
@@ -243,7 +263,7 @@ while (true) {
         LINT_STEP: lintStepReview,
         COMMIT_PREFIX: cfg.commitPrefix,
       });
-      return agent(prompt, {
+      return retryAgent(prompt, {
         label: `review:issue-${task.id}`,
         phase: "Review",
         model: cfg.phases.review.model,
@@ -275,7 +295,7 @@ while (true) {
 
   for (const { task, branch, worktreePath } of candidatesForMerge) {
     const gitCountCmd = `git ${commitsAheadOfBaseArgs(branch, cfg.baseBranch).join(" ")}`;
-    const gate = await agent(
+    const gate = await retryAgent(
       `Run exactly this command from the repository root and return its integer stdout:\n\n    ${gitCountCmd}\n`,
       {
         label: `gate:commits-ahead:issue-${task.id}`,
@@ -286,7 +306,7 @@ while (true) {
       },
     );
 
-    if (gate.count <= 0) {
+    if (!gate || gate.count <= 0) {
       log(`Merge (${passLabel}): branch ${branch} has 0 commits ahead of ${cfg.baseBranch} — skipping (Task left open).`);
       passOutcomes.push({ task: task.id, branch, status: "skipped", reason: "zero commits ahead of base" });
       continue;
@@ -303,7 +323,7 @@ while (true) {
       CLOSE_COMMAND: fillCommand(cfg.workSource.close, { id: task.id }),
     });
 
-    const merge = await agent(prompt, {
+    const merge = await retryAgent(prompt, {
       label: `merge:issue-${task.id}`,
       phase: "Merge",
       model: cfg.phases.merge.model,
@@ -311,6 +331,11 @@ while (true) {
       schema: MERGE_SCHEMA,
     });
 
+    if (!merge) {
+      log(`Merge (${passLabel}): merge agent failed for Task #${task.id} — branch left open for Resumption.`);
+      passOutcomes.push({ task: task.id, branch, status: "skipped", reason: "merge agent failed" });
+      continue;
+    }
     log(`Merge (${passLabel}): merged=${merge.merged} closed=${merge.closed} for Task #${task.id}.`);
     passOutcomes.push({ task: task.id, branch, status: "merged", commitsAhead: gate.count, merge });
   }
